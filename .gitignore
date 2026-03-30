@@ -1,0 +1,7 @@
+# Optional: if you add local test scratch Terraform
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+!*.tfvars.example
+*.log
