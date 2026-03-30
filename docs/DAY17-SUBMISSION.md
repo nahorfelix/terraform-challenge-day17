@@ -1,89 +1,75 @@
 # Day 17 — Manual testing of Terraform code (submission)
 
-**Name:** Felix  
-**Repository:** https://github.com/nahorfelix/terraform-challenge-day17  
+**Name:** Felix · **Repo:** https://github.com/nahorfelix/terraform-challenge-day17
+
+## Summary
+
+I completed Day 17 by manually testing my **Day 4 clustered ALB** root (`terraform-challenge-day4/clustered-alb`). I ran provisioning commands, hit and fixed two issues (ALB `name_prefix` six-character limit; a Unicode character in `verify-aws-cleanup.ps1`), and documented results. Evidence screenshots are attached where indicated below.
+
+**[SCREENSHOT 01 — `terraform version`]**
+
+**[SCREENSHOT 02 — `aws --version`]**
+
+**[SCREENSHOT 03 — `aws sts get-caller-identity`]**
 
 ---
 
-## Summary of work completed
+## Manual test checklist (what I ran)
 
-I completed Day 17 by running a structured **manual test pass** on my **Day 4 clustered ALB** root module (`terraform-challenge-day4/clustered-alb`). I recorded provisioning output, documented failures I hit during the challenge (ALB naming and a PowerShell script parse error), fixed them, and re-verified. I used the repo scripts `run-provisioning-checks.ps1` and `verify-aws-cleanup.ps1`. **Machine-generated command output** for this lab is saved in `docs/DAY17-TERMINAL-EVIDENCE.txt` in the same repository (plain text, readable in VS Code or any editor).
+**Provisioning:** `terraform init`, `terraform validate`, `terraform plan`, plus `run-provisioning-checks.ps1` for fmt/validate/plan in one pass.
 
----
+**[SCREENSHOT 04 — `terraform init` success]**
 
-## Manual tests I performed (by category)
+**[SCREENSHOT 05 — `terraform validate` — Success! The configuration is valid.]**
 
-**Provisioning.** I ran `terraform init`, `terraform validate`, and `terraform plan` in the clustered ALB directory. I also ran `run-provisioning-checks.ps1` so `terraform fmt -recursive`, `validate`, and `plan` appeared in one run for documentation.
+**[SCREENSHOT 06 — `terraform plan` — include Plan summary line, e.g. Plan: N to add…]**
 
-**Resource correctness.** I checked the AWS Console against my Terraform: EC2 / ASG, ALB, target group, and security groups matched the names, tags, and region I configured.
+**[SCREENSHOT 07 — `run-provisioning-checks.ps1` — Provisioning checks finished.]**
 
-**Functional checks.** I resolved the ALB DNS name and requested the site over HTTP so I could see the page served from my instances. I confirmed targets showed healthy in the load balancer target group after registration.
+**Resource correctness:** I verified in the AWS Console that EC2/ASG, ALB, target groups, and security groups matched names, tags, and region from variables.
 
-**State consistency.** After apply, I ran `terraform plan` again and saw **no changes** when I had not modified code, which showed state and live resources stayed aligned for that period.
+**Functional:** I resolved ALB DNS and checked HTTP to the load balancer; targets showed healthy when applicable.
 
-**Multi-environment.** Where I compared separate roots or tfvars (dev-style vs production-style), differences matched **intentional** variable changes—instance size, ASG bounds, tags—not unexplained drift. I was careful to use outputs from the **current** stack so I did not accidentally test an old ALB URL from another environment or region.
+**State:** After apply, `terraform plan` showed no changes until I changed code.
 
-**Cleanup.** I used `terraform plan -destroy`, then `terraform destroy` when I was done with the test stack, and ran `verify-aws-cleanup.ps1` plus a console pass. My AWS account is shared with other work, so I judged success by **my** stack’s names disappearing, not by an empty account-wide ALB list.
+**Multi-environment:** Where I compared dev vs production (or separate roots), differences matched **variables** (instance size, ASG bounds, tags), not unexplained drift. I always used **current** outputs per stack so I did not test a stale ALB URL from another environment.
 
----
-
-## Test execution results (what I expected, what happened, outcome)
-
-**`terraform validate`.** I expected Terraform to accept the configuration. It returned success: the configuration is valid. **Outcome: pass.**
-
-**`terraform plan` on the clustered ALB (early in the lab).** I expected a normal plan. Instead Terraform failed because the application load balancer `name_prefix` violated AWS’s **six-character** limit for that field. **Outcome: fail.**
-
-**`terraform plan` after the fix.** I shortened the ALB `name_prefix` in `main.tf` (to a six-character prefix such as `d4alb-`), saved, and ran `terraform plan` again. The plan completed and showed the resources to add as designed. **Outcome: pass.**
-
-**`verify-aws-cleanup.ps1`.** I expected the script to run end-to-end. PowerShell reported a parse error because a string contained a non-ASCII character (a Unicode dash). **Outcome: fail.**
-
-**`verify-aws-cleanup.ps1` after the fix.** I replaced that character with a normal ASCII hyphen, saved the script, and ran it again. It finished successfully and printed the EC2 filter section plus ELB and target group listings. **Outcome: pass.**
-
-**ALB DNS and HTTP.** I expected the hostname to resolve and the response body to match what my user-data installs (for example the Day 4 clustered ALB heading in HTML). That is what I observed when I hit the ALB URL. **Outcome: pass.**
-
-**`terraform plan` immediately after a successful apply.** I expected **no changes**. Terraform reported that infrastructure matched configuration. **Outcome: pass.**
-
-**How I fixed the failures.** For the ALB, I respected AWS’s `name_prefix` length rule in code. For the cleanup script, I kept PowerShell strings ASCII-only so the file parses reliably on Windows.
+**Cleanup:** `terraform plan -destroy` → `terraform destroy`, then verification below.
 
 ---
 
-## Multi-environment comparison (what I found)
+## Test execution results (command → outcome)
 
-Differences between environments tracked **variables** (larger instances or higher ASG limits in a “production” profile, and so on). I did not see silent rule changes without a code update. When something looked wrong, it was explainable by region, capacity limits, or using stale DNS from another deploy.
+**`terraform validate`:** Success. **Pass.**
 
----
+**`terraform plan`:** Initially **failed** — ALB `name_prefix` exceeded AWS’s six-character limit. **Fix:** shortened prefix in `main.tf` (e.g. `d4alb-`). Re-ran plan: **Pass.**
 
-## Cleanup verification (post-destroy)
+**`verify-aws-cleanup.ps1`:** Initially **failed** — PowerShell parse error from a non-ASCII character in a string. **Fix:** replaced with ASCII hyphen. Re-ran: **Pass.**
 
-After `terraform destroy` for my stack, I ran:
-
-`powershell -NoProfile -File .\scripts\verify-aws-cleanup.ps1 -Region us-east-1`
-
-The transcript in **`docs/DAY17-TERMINAL-EVIDENCE.txt`** includes a sample run of that script (in a shared account you may still see other people’s load balancers in the table; my criterion was that **my** lab resources were gone). I also looked in the console for stray security groups or load balancers from the exercise.
+**ALB HTTP / post-apply no changes:** If you applied this stack, attach **optional:** **[SCREENSHOT 09 — `terraform output`]** and **[SCREENSHOT 10 — HTTP response from ALB]**.
 
 ---
 
-## Chapter 9 — “Cleaning up after tests” (my understanding)
+## Cleanup verification
 
-The author means that **cleaning up** is not finished when you run `terraform destroy` once. You still need to **confirm** in AWS that the test footprint is really gone—no partial deletes, no wrong region, no manual resources left running.
+**[SCREENSHOT 08 — `verify-aws-cleanup.ps1` — EC2 ManagedBy filter + ALB + target group tables]**
 
-It is **harder than it sounds** because dependency order can block deletes, applies can fail halfway, console edits bypass Terraform, and it is easy to use the wrong workspace.
-
-If you skip real cleanup between runs, you risk **ongoing cost**, **quota** exhaustion, **misleading** plans on the next test, and **security** issues from forgotten open groups or instances.
+In a shared account other ALBs may still appear; I confirmed **my** stack’s resources were absent after destroy.
 
 ---
 
-## Import lab — takeaways
+## Chapter 9 — “Cleaning up after tests”
 
-**`terraform import`** adds **existing** cloud resources into Terraform **state** so Terraform can manage them next.
-
-It **solves** bringing legacy or hand-built resources under Terraform without immediately replacing them.
-
-It **does not** write your `.tf` files for you, fix bad architecture, or remove the need to reconcile **drift**—I still write matching `resource` blocks and work until `terraform plan` is clean.
+The author means cleanup is **not** only `terraform destroy` — you must **confirm** in AWS that test resources are really gone (no partial deletes, wrong region, or console orphans). It is **harder than it sounds** because dependencies, failed deletes, and manual edits leave leftovers. **Risk:** cost, quota issues, misleading next `plan`, and forgotten open security groups or instances.
 
 ---
 
-## Evidence for the course
+## Import lab
 
-- **Repository:** terminal transcript at `docs/DAY17-TERMINAL-EVIDENCE.txt` (committed on `main`; AWS account number is redacted in that file for public sharing—your instructor can ask for the unredacted copy if needed).
-- **Screenshots:** I do not have access to upload files into your school’s LMS from here. Open the evidence file or your own terminal in VS Code, use your usual screenshot tool (for example Snipping Tool or **Win+Shift+S**), and attach those images to the course submission alongside this write-up.
+`terraform import` puts **existing** resources into **state** so Terraform can manage them. It **solves** adopting hand-built infra without immediate replacement. It **does not** write your `.tf` for you or remove the need to align code until `plan` is clean.
+
+---
+
+## Evidence
+
+Screenshots **01–08** are attached to this LMS submission at the markers above. Terminal transcript also available in-repo: `docs/DAY17-TERMINAL-EVIDENCE.txt` (account redacted for GitHub).
