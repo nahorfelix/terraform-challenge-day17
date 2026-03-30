@@ -1,151 +1,80 @@
-# Day 17: Manual Testing of Terraform Code
+# Day 17 — Manual testing write-up (Felix)
 
-Testing your infrastructure is what distinguishes an engineer who hopes everything works from an engineer who knows everything works.
-
-Before implementing automated tests, it is essential to understand precisely what needs to be verified, why, and how to validate the proper functioning of each component. Today we structure a manual testing approach for the webserver / clustered ALB stack so that every resource is correctly provisioned, configured, and operational.
-
-Before launching tests, define what you want to verify. A manual test without a structured checklist is like navigating blind.
+This note is my own workflow for the **30-day Terraform challenge**, not a copy of someone else’s submission. I use a **checklist** so I know *what* to prove (provision, behavior, state, teardown) before I trust automation later.
 
 ---
 
-## Manual test checklist
+## Why bother with a checklist?
 
-### Provisioning verification
-
-- Run `terraform init` — should complete without errors.
-- Run `terraform validate` — should pass cleanly.
-- Run `terraform plan` — should show the expected number and type of resources (review the summary line).
-- Run `terraform apply` — should complete without errors (when you are ready to create real resources).
-
-Optional helper (non-destructive): `.\scripts\run-provisioning-checks.ps1 -TerraformDir "<path-to-root>"` runs `fmt`, `validate`, and `plan`.
-
-### Resource correctness
-
-- All expected resources are visible in the AWS Console (EC2, ELB/ALB, ASG, security groups, target groups as applicable).
-- Resource names, tags, and regions match variable values.
-- Security group rules match Terraform exactly — no extra or missing rules.
-
-### Functional verification
-
-- ALB DNS name resolves (`nslookup` / `Resolve-DnsName`).
-- `curl` or `Invoke-WebRequest` to `http://<alb-dns>/` returns the expected response (match your user-data / app).
-- Target group shows healthy targets; ASG instances pass health checks.
-- Stopping one instance manually triggers the ASG to replace it (optional but valuable).
-
-### State consistency
-
-- `terraform plan` returns **No changes** after a fresh apply when nothing should drift.
-- State file accurately reflects what exists in AWS (no surprise changes on the next plan).
-
-### Multi-environment (if you have dev and production roots)
-
-- Run the same checklist against each root module independently.
-- Compare instance type, ASG min/max, tags, and region — differences should match **variables**, not surprises (e.g. different AMI or DNS if regions differ).
-
-### Cleanup
-
-- Review `terraform plan -destroy`, then run `terraform destroy`.
-- Run post-destroy AWS verification (CLI or `scripts\verify-aws-cleanup.ps1`) and confirm your stack’s resources are gone.
+Manual testing is where you decide what “healthy” means: which command proves the ALB exists, which proves traffic works, and what “clean” means after `destroy`. If you skip that design step, automated tests just encode confusion faster.
 
 ---
 
-## Test execution results (command, expected, actual, result)
+## My test checklist (by category)
 
-**Test: Terraform validate**
+| Category | What I verify |
+|----------|----------------|
+| **Provisioning** | `terraform init` → `validate` → `plan` with no surprises; then `apply` when I want real AWS objects. |
+| **AWS reality** | In the console: EC2, ALB, ASG, SG, TG line up with names, tags, and region from variables. |
+| **Behavior** | ALB DNS resolves; HTTP returns the page my user-data serves; targets show **healthy** in the TG. |
+| **State** | Right after apply, `terraform plan` shows **no changes** (until I intentionally change code). |
+| **Multi-env** | If I have separate roots (e.g. dev vs prod), I run the same steps in each and compare: instance size, ASG bounds, tags — differences should match tfvars, not random drift. |
+| **Cleanup** | `plan -destroy` → `destroy` → AWS CLI (or `verify-aws-cleanup.ps1`) to prove **my** test resources are gone. |
 
-- **Command:** `terraform validate`
-- **Expected:** Success — configuration is valid.
-- **Actual:** Success.
-- **Result:** PASS
+---
 
-**Test: Terraform plan (clustered ALB stack)**
+## Execution log (command → expected → actual → result)
 
-- **Command:** `terraform plan`
-- **Expected:** Plan completes without provider/API errors.
-- **Actual:** Error: `name_prefix` for `aws_lb` cannot be longer than 6 characters (prefix was too long).
-- **Result:** FAIL
+| Step | Expected | Actual | Result |
+|------|----------|--------|--------|
+| `terraform validate` | Valid config | Valid | PASS |
+| `terraform plan` (Day 4 clustered ALB) | Clean plan | Error: ALB `name_prefix` over 6 characters | **FAIL** |
+| After shortening `name_prefix` in `main.tf` | Plan runs | Plan succeeds | PASS |
+| `verify-aws-cleanup.ps1` | Script runs | Parse error (bad character in a string) | **FAIL** |
+| After fixing the string to plain ASCII | Exit 0 | Tables print | PASS |
 
-**Fix:** AWS limits ALB `name_prefix` to six characters. Shortened the prefix in `main.tf` (for example to `d4alb-`), re-ran `terraform plan` — plan succeeded.
+**Root causes:** (1) AWS enforces a **six-character** limit on ALB `name_prefix`. (2) A Unicode dash in PowerShell broke parsing — stick to ASCII in scripts.
 
-**Test: Post-destroy cleanup script**
+Fill in from your own runs: ALB HTTP check, SG review, and **No changes** after apply.
 
-- **Command:** `.\scripts\verify-aws-cleanup.ps1` (or equivalent AWS CLI checks).
-- **Expected:** Script runs and prints EC2 / ALB / target group tables.
-- **Actual:** PowerShell parse error on a `Write-Host` line (non-ASCII character in the string).
-- **Result:** FAIL
+---
 
-**Fix:** Replaced the problematic character with a plain ASCII hyphen, saved the script, re-ran — exit code 0.
+## Dev vs production (when both exist)
 
-**Test: ALB DNS resolves and returns expected response** *(adjust URL and body to your stack)*
-
-- **Command:** `curl -s http://<your-alb-dns>/` or `Invoke-WebRequest`
-- **Expected:** Response body matches what your instances serve (e.g. HTML banner from user-data).
-- **Actual:** *(paste after you run it)*
-- **Result:** PASS / FAIL
-
-**Test: Terraform plan clean after apply**
-
-- **Command:** `terraform plan`
-- **Expected:** `No changes. Your infrastructure matches the configuration.`
-- **Actual:** *(paste after apply)*
-- **Result:** PASS
-
-**Test: Security group (console or CLI)**
-
-- **Command:** AWS Console → Security group inbound rules *(or `aws ec2 describe-security-groups`)*.
-- **Expected:** Only the rules defined in Terraform (e.g. HTTP 80 from intended CIDRs).
-- **Actual:** *(paste)*
-- **Result:** PASS
+I expect **different variable values** (bigger instances in prod, different min/max ASG). What I watch for: **unexpected** differences — e.g. prod plan failing on instance capacity while dev passes, or health checks failing in one region because of wrong port/path. Those get a line in the log, not a silent “it works somewhere.”
 
 ---
 
 ## Cleanup verification
 
-After destroying resources, verify cleanup. Examples:
-
-```powershell
-aws ec2 describe-instances `
-  --region us-east-1 `
-  --filters "Name=tag:ManagedBy,Values=terraform" "Name=instance-state-name,Values=running,pending,stopping,stopped" `
-  --query "Reservations[*].Instances[*].InstanceId" `
-  --output text
-# Expect: empty after a clean destroy of stacks that use that tag
-```
-
-Or use the bundled script:
-
-```powershell
-powershell -NoProfile -File ".\scripts\verify-aws-cleanup.ps1" -Region us-east-1
-```
-
-**Paste your actual output here after destroy.** If your account still shows other load balancers, that is normal — confirm **your** test stack’s ALB and target group names are absent. Always double-check the AWS Console for orphans.
+After destroy, I run the CLI checks bundled in this repo (`scripts\verify-aws-cleanup.ps1`) and paste the output. In a **shared** AWS account, you may still see **other** load balancers; the important part is that **your** stack’s names are gone. I still glance at the console for stragglers.
 
 ---
 
-## Chapter 9 learnings
+## Chapter 9 — “Cleaning up after tests”
 
-The author emphasizes that **“cleaning up after tests”** is not only running `terraform destroy` — it is making sure **no stray resources (and no surprise costs)** remain, including when a destroy fails partway or leaves dependencies behind.
+In my own words: **cleanup** is not “I ran `terraform destroy` once.” It is **confirming** in AWS that what you created for the test is actually gone — including when destroy is partial or something was created outside Terraform.
 
-That is **harder than it sounds** because dependency order, API failures, manual console changes, and multiple regions or workspaces can leave orphaned objects.
+It is **harder than it sounds** because dependencies fail in order, people edit things in the console, and you might use the wrong region or workspace.
 
-**Risk of not cleaning between runs:** continued billing, quota pressure, confusing results on the next test, and possible **security exposure** from forgotten open security groups or instances.
-
----
-
-## Lab takeaways — `terraform import`
-
-`terraform import` brings **existing** infrastructure into Terraform **state** so you can manage it with code going forward.
-
-**What it solves:** Adopting resources that were created outside Terraform without immediately replacing them.
-
-**What it does not solve:** It does not write your configuration for you; you must define matching `resource` blocks and reconcile until `terraform plan` is clean. It does not by itself fix architectural or drift problems.
+If you do not clean up between runs, you pay for leftovers, burn **quotas**, get **confusing** plans next time, and can leave **security groups or instances** exposed.
 
 ---
 
-## Blog post *(optional — add your Medium URL when published)*
+## Import lab — what I took away
 
-**Medium URL:** *(add your article URL, e.g. https://medium.com/@yourhandle/day-17-manual-testing)*
+`terraform import` puts an **existing** resource into **state** so Terraform can manage it. It **does not** invent your `.tf` code — you still write matching resources and reconcile until `plan` is clean. It does **not** fix bad architecture by itself.
 
-**GitHub:** https://github.com/nahorfelix/terraform-challenge-day17
+---
 
-**Summary:** This work documents structured manual testing for Terraform: a repeatable checklist (provision, correctness, functional, state, multi-env, cleanup), concrete test results including failures and fixes, post-destroy AWS verification, and Chapter 9 themes on cleanup discipline and what `terraform import` does and does not do.
+## Repo
+
+**GitHub:** https://github.com/nahorfelix/terraform-challenge-day17  
+
+**Medium / blog:** *(add your link when you publish)*
+
+---
+
+## Screenshot helper
+
+Run `scripts\run-day17-screenshot-session.ps1` from this repo (see comments in that file for the full one-liner). It pauses between steps so you can capture each screen in order.
