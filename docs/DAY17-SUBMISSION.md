@@ -6,11 +6,8 @@
 
 I completed Day 17 by manually testing my **Day 4 clustered ALB** root (`terraform-challenge-day4/clustered-alb`). I ran provisioning commands, hit and fixed two issues (ALB `name_prefix` six-character limit; a Unicode character in `verify-aws-cleanup.ps1`), and documented results. Evidence screenshots are attached where indicated below.
 
-**[SCREENSHOT 01 — `terraform version`]**
+<img width="1750" height="467" alt="Screenshot 2026-03-30 225439" src="https://github.com/user-attachments/assets/8df7a155-90c1-4e3e-ae80-e65a97db7a9b" />
 
-**[SCREENSHOT 02 — `aws --version`]**
-
-**[SCREENSHOT 03 — `aws sts get-caller-identity`]**
 
 ---
 
@@ -18,13 +15,13 @@ I completed Day 17 by manually testing my **Day 4 clustered ALB** root (`terrafo
 
 **Provisioning:** `terraform init`, `terraform validate`, `terraform plan`, plus `run-provisioning-checks.ps1` for fmt/validate/plan in one pass.
 
-**[SCREENSHOT 04 — `terraform init` success]**
+<img width="1750" height="467" alt="Screenshot 2026-03-30 225439" src="https://github.com/user-attachments/assets/be3b5035-d3bc-47eb-a4c3-4a3c1bb0c34e" />
 
-**[SCREENSHOT 05 — `terraform validate` — Success! The configuration is valid.]**
 
-**[SCREENSHOT 06 — `terraform plan` — include Plan summary line, e.g. Plan: N to add…]**
+<img width="1814" height="671" alt="Screenshot 2026-03-30 230658" src="https://github.com/user-attachments/assets/35d48af8-06c5-4cd7-acd3-1d02f7cb3c54" />
 
-**[SCREENSHOT 07 — `run-provisioning-checks.ps1` — Provisioning checks finished.]**
+<img width="1839" height="665" alt="Screenshot 2026-03-30 230808" src="https://github.com/user-attachments/assets/41d6b32c-861e-4ed6-b790-6ae13609f322" />
+
 
 **Resource correctness:** I verified in the AWS Console that EC2/ASG, ALB, target groups, and security groups matched names, tags, and region from variables.
 
@@ -69,7 +66,3 @@ The author means cleanup is **not** only `terraform destroy` — you must **conf
 `terraform import` puts **existing** resources into **state** so Terraform can manage them. It **solves** adopting hand-built infra without immediate replacement. It **does not** write your `.tf` for you or remove the need to align code until `plan` is clean.
 
 ---
-
-## Evidence
-
-Screenshots **01–08** are attached to this LMS submission at the markers above. Terminal transcript also available in-repo: `docs/DAY17-TERMINAL-EVIDENCE.txt` (account redacted for GitHub).
