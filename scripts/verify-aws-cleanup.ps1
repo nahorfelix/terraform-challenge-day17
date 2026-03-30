@@ -18,7 +18,7 @@ aws ec2 describe-instances `
   --query "Reservations[*].Instances[*].[InstanceId,State.Name,Tags[?Key=='Name'].Value|[0]]" `
   --output table
 
-Write-Host "`n=== Application Load Balancers (all in region — confirm yours are gone) ===" -ForegroundColor Cyan
+Write-Host "`n=== Application Load Balancers (all in region - confirm yours are gone) ===" -ForegroundColor Cyan
 aws elbv2 describe-load-balancers --region $Region --query "LoadBalancers[*].[LoadBalancerName,DNSName]" --output table
 
 Write-Host "`n=== Target groups (spot-check names from your stack) ===" -ForegroundColor Cyan
